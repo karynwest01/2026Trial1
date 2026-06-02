@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pseudocode Editor</title>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --border: #d6d6d6;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --danger: #b91c1c;
+      --editor-bg: #111827;
+      --editor-text: #f9fafb;
+      --line-bg: #0b1020;
+      --line-text: #9ca3af;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      margin: 0;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+    }
+
+    button.secondary { background: #4b5563; }
+    button.danger { background: var(--danger); }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .card-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: bold;
+      background: #fafafa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .small {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: normal;
+    }
+
+    .editor-wrap {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      min-height: 470px;
+      max-height: 720px;
+      overflow: hidden;
+    }
+
+    #lineNumbers {
+      margin: 0;
+      padding: 12px 8px;
+      background: var(--line-bg);
+      color: var(--line-text);
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 15px;
+      line-height: 1.5;
+      text-align: right;
+      overflow: hidden;
+      user-select: none;
+      border-right: 1px solid #1f2937;
+    }
+
+    #editor {
+      width: 100%;
+      min-height: 470px;
+      max-height: 720px;
+      resize: vertical;
+      border: 0;
+      outline: none;
+      padding: 12px;
+      background: var(--editor-bg);
+      color: var(--editor-text);
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 15px;
+      line-height: 1.5;
+      white-space: pre;
+      overflow: auto;
+      tab-size: 4;
+    }
+
+    .reference {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    @media (max-width: 850px) {
+      .reference { grid-template-columns: 1fr; }
+    }
+
+    .ref-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .ref-box h2 {
+      font-size: 0.98rem;
+      margin: 0 0 8px 0;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+    }
+
+    .note {
+      margin-top: 10px;
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      background: #111827;
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease-in-out;
+      font-size: 0.9rem;
+    }
+
+    .toast.show { opacity: 1; }
+
+    @media print {
+      body { background: #ffffff; }
+      .controls, .reference, .note, .status { display: none; }
+      .wrap { max-width: none; padding: 0; }
+      .card { border: 0; box-shadow: none; }
+      .card-header { border: 0; background: #ffffff; }
+      .editor-wrap { display: block; }
+      #lineNumbers { display: none; }
+      #editor {
+        color: #000000;
+        background: #ffffff;
+        min-height: auto;
+        max-height: none;
+        height: auto;
+        overflow: visible;
+        border: 1px solid #000000;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>Pseudocode Editor</h1>
+      <div id="status" class="status">Autosave ready</div>
+    </div>
+
+    <div class="controls">
+      <button id="copyBtn">Copy to Clipboard</button>
+      <button id="downloadBtn" class="secondary">Download .txt</button>
+      <button id="printBtn" class="secondary">Print</button>
+      <button id="clearBtn" class="danger">Clear Editor</button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        Algorithm response
+        <span class="small">Use clear structure, indentation, and appropriate pseudocode conventions</span>
+      </div>
+      <div class="editor-wrap">
+        <pre id="lineNumbers">1</pre>
+        <textarea id="editor" spellcheck="false">BEGIN
+
+    // Write your pseudocode here
+
+    INPUT name
+    OUTPUT "Hello " + name
+
+END</textarea>
+      </div>
+    </div>
+
+    <div class="reference">
+      <div class="ref-box">
+        <h2>Selection</h2>
+        <p><code>IF condition THEN</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>statement</code><br>
+        <code>ELSE</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>statement</code><br>
+        <code>ENDIF</code></p>
+      </div>
+
+      <div class="ref-box">
+        <h2>Iteration</h2>
+        <p><code>WHILE condition</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>statement</code><br>
+        <code>ENDWHILE</code></p>
+        <p><code>FOR i = 1 TO 10</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>statement</code><br>
+        <code>NEXT i</code></p>
+      </div>
+
+      <div class="ref-box">
+        <h2>Useful terms</h2>
+        <p><code>BEGIN</code>, <code>END</code>, <code>INPUT</code>, <code>OUTPUT</code>, <code>SET</code>, <code>RETURN</code>, <code>CALL</code></p>
+        <p>Use meaningful variable names and indent inside decisions and loops.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      Notes for students: this editor automatically saves your writing in this browser. Use Copy to Clipboard if you need to paste your response into Canvas. Use Download .txt only if instructed by your teacher.
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const STORAGE_KEY = "pmhs_pseudocode_editor_autosave_v1";
+
+    const editor = document.getElementById("editor");
+    const lineNumbers = document.getElementById("lineNumbers");
+    const statusEl = document.getElementById("status");
+    const copyBtn = document.getElementById("copyBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const printBtn = document.getElementById("printBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const toast = document.getElementById("toast");
+
+    let saveTimer = null;
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function updateLineNumbers() {
+      const lines = editor.value.split("\n").length;
+      let output = "";
+      for (let i = 1; i <= lines; i++) {
+        output += i + "\n";
+      }
+      lineNumbers.textContent = output;
+    }
+
+    function autosave() {
+      localStorage.setItem(STORAGE_KEY, editor.value);
+      const now = new Date();
+      statusEl.textContent = "Autosaved at " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function scheduleAutosave() {
+      statusEl.textContent = "Editing...";
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(autosave, 350);
+    }
+
+    function insertTabAtCursor(event) {
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        const spaces = "    ";
+        editor.value = editor.value.substring(0, start) + spaces + editor.value.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + spaces.length;
+        updateLineNumbers();
+        scheduleAutosave();
+      }
+    }
+
+    editor.addEventListener("input", () => {
+      updateLineNumbers();
+      scheduleAutosave();
+    });
+
+    editor.addEventListener("scroll", () => {
+      lineNumbers.scrollTop = editor.scrollTop;
+    });
+
+    editor.addEventListener("keydown", insertTabAtCursor);
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(editor.value);
+        showToast("Pseudocode copied to clipboard");
+      } catch (error) {
+        editor.select();
+        document.execCommand("copy");
+        showToast("Pseudocode copied");
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "pseudocode_response.txt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      showToast("Downloaded pseudocode_response.txt");
+    });
+
+    printBtn.addEventListener("click", () => {
+      window.print();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      const confirmed = confirm("Clear all pseudocode from the editor?");
+      if (!confirmed) return;
+      editor.value = "";
+      localStorage.removeItem(STORAGE_KEY);
+      updateLineNumbers();
+      statusEl.textContent = "Editor cleared";
+      showToast("Editor cleared");
+      editor.focus();
+    });
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved !== null && saved.trim() !== "") {
+      editor.value = saved;
+      statusEl.textContent = "Autosaved response restored";
+    }
+
+    updateLineNumbers();
+  </script>
+</body>
+</html>
