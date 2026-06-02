@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Python Code Runner</title>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --border: #d6d6d6;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --danger: #b91c1c;
+      --code-bg: #111827;
+      --code-text: #f9fafb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      margin: 0;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 850px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .card-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: bold;
+      background: #fafafa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 340px;
+      border: 0;
+      resize: vertical;
+      padding: 12px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 15px;
+      line-height: 1.45;
+      outline: none;
+    }
+
+    #code {
+      background: var(--code-bg);
+      color: var(--code-text);
+    }
+
+    #stdin {
+      min-height: 120px;
+      color: var(--text);
+    }
+
+    pre {
+      margin: 0;
+      min-height: 340px;
+      max-height: 520px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 12px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 15px;
+      line-height: 1.45;
+      background: #0b1020;
+      color: #f9fafb;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+    }
+
+    button.secondary {
+      background: #4b5563;
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .note {
+      margin-top: 10px;
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .small {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: normal;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>Python Code Runner</h1>
+      <div id="status" class="status">Loading Python...</div>
+    </div>
+
+    <div class="controls">
+      <button id="runBtn" disabled>Run Code</button>
+      <button id="clearOutputBtn" class="secondary">Clear Output</button>
+      <button id="resetBtn" class="danger">Reset Python</button>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          Python code
+          <span class="small">Write your answer here</span>
+        </div>
+        <textarea id="code" spellcheck="false"># Write your Python code here
+
+name = input("Enter your name: ")
+print("Hello,", name)
+
+for i in range(1, 6):
+    print(i)</textarea>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          Output
+          <span class="small">Your program output appears here</span>
+        </div>
+        <pre id="output">Python is loading. This may take a few seconds the first time.</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-header">
+        Program input
+        <span class="small">Optional: one input value per line</span>
+      </div>
+      <textarea id="stdin" spellcheck="false">Karyn</textarea>
+    </div>
+
+    <div class="note">
+      Notes for students: code runs in this browser window. If your program asks for input, place each input value on a separate line in the Program input box before pressing Run Code.
+      Programs that run for too long are stopped automatically.
+    </div>
+  </div>
+
+  <script>
+    const PYODIDE_VERSION = "0.29.4";
+    const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+    const RUN_TIMEOUT_MS = 5000;
+
+    const codeEl = document.getElementById("code");
+    const stdinEl = document.getElementById("stdin");
+    const outputEl = document.getElementById("output");
+    const statusEl = document.getElementById("status");
+    const runBtn = document.getElementById("runBtn");
+    const clearOutputBtn = document.getElementById("clearOutputBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    let worker = null;
+    let ready = false;
+    let running = false;
+    let timeoutId = null;
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    function setOutput(text) {
+      outputEl.textContent = text;
+    }
+
+    function appendOutput(text) {
+      outputEl.textContent += text;
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    function buildWorkerCode() {
+      return `
+        let pyodide = null;
+
+        async function initialise() {
+          try {
+            importScripts("${PYODIDE_CDN}pyodide.js");
+            pyodide = await loadPyodide({ indexURL: "${PYODIDE_CDN}" });
+
+            pyodide.setStdout({
+              batched: (text) => self.postMessage({ type: "stdout", text })
+            });
+
+            pyodide.setStderr({
+              batched: (text) => self.postMessage({ type: "stderr", text })
+            });
+
+            self.postMessage({ type: "ready" });
+          } catch (error) {
+            self.postMessage({
+              type: "error",
+              text: "Python failed to load. Check internet access, Canvas iframe/CSP settings, or CDN blocking.\\n\\n" + error.toString()
+            });
+          }
+        }
+
+        self.onmessage = async (event) => {
+          if (!pyodide) {
+            self.postMessage({ type: "error", text: "Python is not ready yet." });
+            return;
+          }
+
+          const { code, stdin } = event.data;
+
+          const safeInput = JSON.stringify(stdin || "");
+          const safeCode = JSON.stringify(code || "");
+
+          const wrappedCode = \`
+import builtins
+import traceback
+
+_input_values = \${safeInput}.splitlines()
+
+def input(prompt=""):
+    print(prompt, end="")
+    if _input_values:
+        value = _input_values.pop(0)
+        print(value)
+        return value
+    raise EOFError("No more input values were provided.")
+
+builtins.input = input
+
+_user_code = \${safeCode}
+
+try:
+    exec(_user_code, {})
+except Exception:
+    traceback.print_exc()
+\`;
+
+          try {
+            await pyodide.runPythonAsync(wrappedCode);
+            self.postMessage({ type: "done" });
+          } catch (error) {
+            self.postMessage({ type: "error", text: error.toString() });
+          }
+        };
+
+        initialise();
+      `;
+    }
+
+    function createWorker() {
+      ready = false;
+      running = false;
+      runBtn.disabled = true;
+      setStatus("Loading Python...");
+      setOutput("Python is loading. This may take a few seconds the first time.");
+
+      const blob = new Blob([buildWorkerCode()], { type: "application/javascript" });
+      const workerUrl = URL.createObjectURL(blob);
+      worker = new Worker(workerUrl);
+      URL.revokeObjectURL(workerUrl);
+
+      worker.onmessage = (event) => {
+        const { type, text } = event.data;
+
+        if (type === "ready") {
+          ready = true;
+          running = false;
+          runBtn.disabled = false;
+          setStatus("Python ready");
+          if (outputEl.textContent.startsWith("Python is loading")) {
+            setOutput("Ready. Press Run Code to test your program.");
+          }
+        }
+
+        if (type === "stdout" || type === "stderr") {
+          appendOutput(text + "\\n");
+        }
+
+        if (type === "done") {
+          running = false;
+          clearTimeout(timeoutId);
+          runBtn.disabled = false;
+          setStatus("Python ready");
+        }
+
+        if (type === "error") {
+          running = false;
+          clearTimeout(timeoutId);
+          runBtn.disabled = false;
+          setStatus("Python error");
+          appendOutput("\\n" + text);
+        }
+      };
+
+      worker.onerror = (error) => {
+        running = false;
+        clearTimeout(timeoutId);
+        runBtn.disabled = false;
+        setStatus("Python worker error");
+        appendOutput("\\nWorker error: " + error.message);
+      };
+    }
+
+    function stopAndResetWorker(message) {
+      if (worker) {
+        worker.terminate();
+      }
+      worker = null;
+      ready = false;
+      running = false;
+      clearTimeout(timeoutId);
+      runBtn.disabled = true;
+      setStatus("Resetting Python...");
+      setOutput(message || "Python has been reset. Reloading...");
+      createWorker();
+    }
+
+    runBtn.addEventListener("click", () => {
+      if (!ready || running) return;
+
+      running = true;
+      runBtn.disabled = true;
+      setStatus("Running...");
+      setOutput("");
+
+      worker.postMessage({
+        code: codeEl.value,
+        stdin: stdinEl.value
+      });
+
+      timeoutId = setTimeout(() => {
+        stopAndResetWorker("Program stopped: it ran for too long. Check for an infinite loop or code that takes too long to finish.");
+      }, RUN_TIMEOUT_MS);
+    });
+
+    clearOutputBtn.addEventListener("click", () => {
+      setOutput("");
+    });
+
+    resetBtn.addEventListener("click", () => {
+      stopAndResetWorker("Python reset requested. Reloading...");
+    });
+
+    createWorker();
+  </script>
+</body>
+</html>
