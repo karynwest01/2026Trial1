@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PMHS Universal Drawing Tool</title>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --panel: #ffffff;
+    --border: #d9dee8;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --danger: #b91c1c;
+    --toolbar-h: 64px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+  .app { height: 100vh; display: flex; flex-direction: column; }
+  .toolbar {
+    min-height: var(--toolbar-h);
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+    z-index: 5;
+  }
+  .group { display: flex; gap: 6px; align-items: center; padding-right: 8px; margin-right: 2px; border-right: 1px solid var(--border); }
+  .group:last-child { border-right: none; }
+  button, select, input[type="color"], input[type="number"] {
+    height: 36px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 14px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #f3f4f6; }
+  button.active { background: #e8efff; border-color: #8db0ff; color: #123f9c; font-weight: 600; }
+  button.danger:hover { background: #fff1f2; color: var(--danger); }
+  .icon-btn { min-width: 40px; padding: 0 9px; }
+  label.inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  input[type="number"] { width: 64px; }
+  input[type="color"] { width: 42px; padding: 3px; }
+  .workspace { flex: 1; position: relative; overflow: hidden; }
+  .canvas-wrap { position: absolute; inset: 0; overflow: auto; padding: 24px; }
+  .stage {
+    position: relative;
+    width: 1600px;
+    height: 1000px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #cfd6e2;
+    box-shadow: 0 6px 20px rgba(31,41,55,.08);
+    transform-origin: top left;
+  }
+  .stage.grid {
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .statusbar {
+    height: 34px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .help { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    .toolbar { position: sticky; top: 0; }
+    .workspace { min-height: 70vh; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+    <div class="group" id="toolsGroup">
+      <button class="icon-btn active" data-tool="select" title="Select and move">↖</button>
+      <button class="icon-btn" data-tool="text" title="Text">T</button>
+      <button class="icon-btn" data-tool="rect" title="Rectangle">▭</button>
+      <button class="icon-btn" data-tool="roundrect" title="Rounded rectangle">▢</button>
+      <button class="icon-btn" data-tool="ellipse" title="Ellipse">◯</button>
+      <button class="icon-btn" data-tool="diamond" title="Diamond">◇</button>
+      <button class="icon-btn" data-tool="line" title="Line">／</button>
+      <button class="icon-btn" data-tool="arrow" title="Arrow">→</button>
+      <button class="icon-btn" data-tool="doublearrow" title="Double-ended arrow">↔</button>
+      <button class="icon-btn" data-tool="pen" title="Freehand pen">✎</button>
+    </div>
+
+    <div class="group">
+      <button class="icon-btn" id="undoBtn" title="Undo">↶</button>
+      <button class="icon-btn" id="redoBtn" title="Redo">↷</button>
+      <button class="icon-btn danger" id="deleteBtn" title="Delete selected">🗑</button>
+      <button class="icon-btn" id="duplicateBtn" title="Duplicate selected">⧉</button>
+    </div>
+
+    <div class="group">
+      <label class="inline">Stroke <input id="strokeColor" type="color" value="#111827" /></label>
+      <label class="inline">Fill <input id="fillColor" type="color" value="#ffffff" /></label>
+      <button id="noFillBtn" title="Toggle transparent fill">No fill</button>
+      <label class="inline">Width <input id="lineWidth" type="number" value="2" min="1" max="12" /></label>
+      <label class="inline">Text <input id="fontSize" type="number" value="22" min="10" max="72" /></label>
+    </div>
+
+    <div class="group">
+      <button id="backBtn" title="Send selected object backward">Send back</button>
+      <button id="frontBtn" title="Bring selected object forward">Bring front</button>
+    </div>
+
+    <div class="group">
+      <button id="gridBtn" title="Toggle grid">Grid</button>
+      <label class="inline">Zoom
+        <select id="zoomSelect">
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="1" selected>100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="group">
+      <button id="clearBtn" class="danger">Clear</button>
+      <button id="exportBtn">Export PNG</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="stage" id="stage">
+        <canvas id="canvas" width="1600" height="1000" aria-label="Drawing canvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div id="status">Tool: Select</div>
+    <div class="help">Double-click a text object to edit. Delete key removes selected object.</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const toolsGroup = document.getElementById('toolsGroup');
+  const status = document.getElementById('status');
+
+  const strokeColor = document.getElementById('strokeColor');
+  const fillColor = document.getElementById('fillColor');
+  const lineWidthInput = document.getElementById('lineWidth');
+  const fontSizeInput = document.getElementById('fontSize');
+  const noFillBtn = document.getElementById('noFillBtn');
+
+  let tool = 'select';
+  let objects = [];
+  let selectedId = null;
+  let isDrawing = false;
+  let start = null;
+  let current = null;
+  let dragOffset = null;
+  let draft = null;
+  let noFill = false;
+  let zoom = 1;
+
+  const history = [];
+  let historyIndex = -1;
+
+  const clone = v => JSON.parse(JSON.stringify(v));
+  const uid = () => 'o' + Math.random().toString(36).slice(2,10);
+
+  function pushHistory() {
+    const snapshot = clone(objects);
+    history.splice(historyIndex + 1);
+    history.push(snapshot);
+    historyIndex = history.length - 1;
+  }
+  function restoreHistory(index) {
+    if (index < 0 || index >= history.length) return;
+    historyIndex = index;
+    objects = clone(history[historyIndex]);
+    selectedId = null;
+    render();
+  }
+
+  function currentStyle() {
+    return {
+      stroke: strokeColor.value,
+      fill: noFill ? null : fillColor.value,
+      lineWidth: Math.max(1, Number(lineWidthInput.value) || 2),
+      fontSize: Math.max(10, Number(fontSizeInput.value) || 22)
+    };
+  }
+
+  function setTool(next) {
+    tool = next;
+    document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+    status.textContent = 'Tool: ' + ({select:'Select', text:'Text', rect:'Rectangle', roundrect:'Rounded rectangle', ellipse:'Ellipse', diamond:'Diamond', line:'Line', arrow:'Arrow', doublearrow:'Double-ended arrow', pen:'Freehand'}[tool] || tool);
+    canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  }
+
+  function getPoint(evt) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: (evt.clientX - r.left) * (canvas.width / r.width),
+      y: (evt.clientY - r.top) * (canvas.height / r.height)
+    };
+  }
+
+  function normRect(x1,y1,x2,y2) {
+    return { x: Math.min(x1,x2), y: Math.min(y1,y2), w: Math.abs(x2-x1), h: Math.abs(y2-y1) };
+  }
+
+  function drawArrowHead(ctx, x1,y1,x2,y2, size=12) {
+    const angle = Math.atan2(y2-y1, x2-x1);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - size*Math.cos(angle-Math.PI/6), y2 - size*Math.sin(angle-Math.PI/6));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - size*Math.cos(angle+Math.PI/6), y2 - size*Math.sin(angle+Math.PI/6));
+    ctx.stroke();
+  }
+
+  function drawObject(o, isDraft=false) {
+    ctx.save();
+    ctx.lineWidth = o.lineWidth || 2;
+    ctx.strokeStyle = o.stroke || '#111827';
+    ctx.fillStyle = o.fill || 'transparent';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (isDraft) ctx.globalAlpha = .75;
+
+    if (o.type === 'rect' || o.type === 'roundrect' || o.type === 'ellipse' || o.type === 'diamond') {
+      const r = normRect(o.x1,o.y1,o.x2,o.y2);
+      ctx.beginPath();
+      if (o.type === 'rect') ctx.rect(r.x,r.y,r.w,r.h);
+      if (o.type === 'roundrect') {
+        const rad = Math.min(18, r.w/4, r.h/4);
+        ctx.roundRect(r.x,r.y,r.w,r.h,rad);
+      }
+      if (o.type === 'ellipse') ctx.ellipse(r.x+r.w/2,r.y+r.h/2,r.w/2,r.h/2,0,0,Math.PI*2);
+      if (o.type === 'diamond') {
+        ctx.moveTo(r.x+r.w/2,r.y);
+        ctx.lineTo(r.x+r.w,r.y+r.h/2);
+        ctx.lineTo(r.x+r.w/2,r.y+r.h);
+        ctx.lineTo(r.x,r.y+r.h/2);
+        ctx.closePath();
+      }
+      if (o.fill) ctx.fill();
+      ctx.stroke();
+    }
+
+    if (o.type === 'line' || o.type === 'arrow' || o.type === 'doublearrow') {
+      ctx.beginPath(); ctx.moveTo(o.x1,o.y1); ctx.lineTo(o.x2,o.y2); ctx.stroke();
+      if (o.type === 'arrow' || o.type === 'doublearrow') drawArrowHead(ctx,o.x1,o.y1,o.x2,o.y2);
+      if (o.type === 'doublearrow') drawArrowHead(ctx,o.x2,o.y2,o.x1,o.y1);
+    }
+
+    if (o.type === 'pen') {
+      if (o.points && o.points.length > 1) {
+        ctx.beginPath(); ctx.moveTo(o.points[0].x,o.points[0].y);
+        for (let i=1;i<o.points.length;i++) ctx.lineTo(o.points[i].x,o.points[i].y);
+        ctx.stroke();
+      }
+    }
+
+    if (o.type === 'text') {
+      ctx.font = `${o.fontSize || 22}px Arial, sans-serif`;
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = o.stroke || '#111827';
+      const lines = String(o.text || '').split('\n');
+      lines.forEach((line,i)=>ctx.fillText(line,o.x,o.y + i*(o.fontSize||22)*1.2));
+    }
+
+    ctx.restore();
+  }
+
+  function bounds(o) {
+    if (['rect','roundrect','ellipse','diamond','line','arrow','doublearrow'].includes(o.type)) {
+      const r = normRect(o.x1,o.y1,o.x2,o.y2);
+      return {x:r.x,y:r.y,w:Math.max(r.w,1),h:Math.max(r.h,1)};
+    }
+    if (o.type === 'pen') {
+      const xs=o.points.map(p=>p.x), ys=o.points.map(p=>p.y);
+      return {x:Math.min(...xs), y:Math.min(...ys), w:Math.max(...xs)-Math.min(...xs), h:Math.max(...ys)-Math.min(...ys)};
+    }
+    if (o.type === 'text') {
+      ctx.save(); ctx.font=`${o.fontSize||22}px Arial, sans-serif`;
+      const lines=String(o.text||'').split('\n');
+      const w=Math.max(...lines.map(l=>ctx.measureText(l||' ').width),20);
+      const h=lines.length*(o.fontSize||22)*1.2;
+      ctx.restore(); return {x:o.x,y:o.y,w,h};
+    }
+    return {x:0,y:0,w:0,h:0};
+  }
+
+  function drawSelection(o) {
+    const b=bounds(o); ctx.save();
+    ctx.strokeStyle='#2563eb'; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+    ctx.strokeRect(b.x-5,b.y-5,b.w+10,b.h+10);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    objects.forEach(o => drawObject(o));
+    if (draft) drawObject(draft,true);
+    const selected=objects.find(o=>o.id===selectedId);
+    if (selected) drawSelection(selected);
+  }
+
+  function hitObject(p) {
+    for (let i=objects.length-1;i>=0;i--) {
+      const o=objects[i], b=bounds(o), pad=8;
+      if (p.x>=b.x-pad && p.x<=b.x+b.w+pad && p.y>=b.y-pad && p.y<=b.y+b.h+pad) return o;
+    }
+    return null;
+  }
+
+  function moveObject(o, dx, dy) {
+    if (['rect','roundrect','ellipse','diamond','line','arrow','doublearrow'].includes(o.type)) {
+      o.x1+=dx;o.y1+=dy;o.x2+=dx;o.y2+=dy;
+    } else if (o.type==='pen') {
+      o.points.forEach(p=>{p.x+=dx;p.y+=dy;});
+    } else if (o.type==='text') { o.x+=dx;o.y+=dy; }
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    const p=getPoint(e); start=p; current=p; isDrawing=true; canvas.setPointerCapture(e.pointerId);
+
+    if (tool==='select') {
+      const hit=hitObject(p); selectedId=hit ? hit.id : null;
+      if (hit) {
+        const b=bounds(hit);
+        dragOffset={x:p.x-b.x,y:p.y-b.y,last:p};
+      }
+      render(); return;
+    }
+
+    if (tool==='text') {
+      const text=prompt('Enter text:');
+      if (text && text.trim()) {
+        const s=currentStyle(); objects.push({id:uid(),type:'text',x:p.x,y:p.y,text:text.trim(),stroke:s.stroke,fontSize:s.fontSize});
+        selectedId=objects[objects.length-1].id; pushHistory(); render();
+      }
+      isDrawing=false; return;
+    }
+
+    const s=currentStyle();
+    if (tool==='pen') draft={id:uid(),type:'pen',points:[p],stroke:s.stroke,lineWidth:s.lineWidth};
+    else draft={id:uid(),type:tool,x1:p.x,y1:p.y,x2:p.x,y2:p.y,...s};
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!isDrawing) return;
+    const p=getPoint(e); current=p;
+    if (tool==='select') {
+      const o=objects.find(o=>o.id===selectedId);
+      if (o && dragOffset) {
+        const dx=p.x-dragOffset.last.x, dy=p.y-dragOffset.last.y;
+        moveObject(o,dx,dy); dragOffset.last=p; render();
+      }
+      return;
+    }
+    if (!draft) return;
+    if (tool==='pen') draft.points.push(p);
+    else { draft.x2=p.x; draft.y2=p.y; }
+    render();
+  });
+
+  canvas.addEventListener('pointerup', e => {
+    if (!isDrawing) return;
+    isDrawing=false;
+    if (tool==='select') {
+      if (dragOffset) pushHistory(); dragOffset=null; return;
+    }
+    if (draft) {
+      const b=bounds(draft);
+      if ((draft.type==='pen' && draft.points.length>1) || b.w>3 || b.h>3) {
+        objects.push(draft); selectedId=draft.id; pushHistory();
+      }
+      draft=null; render();
+    }
+  });
+
+  canvas.addEventListener('dblclick', e => {
+    const hit=hitObject(getPoint(e));
+    if (hit && hit.type==='text') {
+      const next=prompt('Edit text:',hit.text);
+      if (next!==null) { hit.text=next; selectedId=hit.id; pushHistory(); render(); }
+    }
+  });
+
+  function deleteSelected() {
+    if (!selectedId) return;
+    objects=objects.filter(o=>o.id!==selectedId); selectedId=null; pushHistory(); render();
+  }
+
+  document.addEventListener('keydown', e => {
+    const tag=document.activeElement?.tagName;
+    if (tag==='INPUT' || tag==='SELECT') return;
+    if (e.key==='Delete' || e.key==='Backspace') { e.preventDefault(); deleteSelected(); }
+    if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z') { e.preventDefault(); restoreHistory(historyIndex-1); }
+    if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='y') { e.preventDefault(); restoreHistory(historyIndex+1); }
+  });
+
+  toolsGroup.addEventListener('click', e => { const b=e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
+  document.getElementById('undoBtn').onclick=()=>restoreHistory(historyIndex-1);
+  document.getElementById('redoBtn').onclick=()=>restoreHistory(historyIndex+1);
+  document.getElementById('deleteBtn').onclick=deleteSelected;
+
+  document.getElementById('duplicateBtn').onclick=()=>{
+    const o=objects.find(o=>o.id===selectedId); if(!o) return;
+    const c=clone(o); c.id=uid(); moveObject(c,20,20); objects.push(c); selectedId=c.id; pushHistory(); render();
+  };
+
+  document.getElementById('backBtn').onclick=()=>{
+    const i=objects.findIndex(o=>o.id===selectedId); if(i>0){ const [o]=objects.splice(i,1); objects.splice(i-1,0,o); pushHistory(); render(); }
+  };
+  document.getElementById('frontBtn').onclick=()=>{
+    const i=objects.findIndex(o=>o.id===selectedId); if(i>=0 && i<objects.length-1){ const [o]=objects.splice(i,1); objects.splice(i+1,0,o); pushHistory(); render(); }
+  };
+
+  noFillBtn.onclick=()=>{ noFill=!noFill; noFillBtn.classList.toggle('active',noFill); noFillBtn.textContent=noFill?'Fill off':'No fill'; };
+  document.getElementById('gridBtn').onclick=e=>{ stage.classList.toggle('grid'); e.target.classList.toggle('active',stage.classList.contains('grid')); };
+  document.getElementById('zoomSelect').onchange=e=>{ zoom=Number(e.target.value); stage.style.transform=`scale(${zoom})`; stage.style.marginBottom=`${1000*(zoom-1)}px`; stage.style.marginRight=`${1600*(zoom-1)}px`; };
+
+  document.getElementById('clearBtn').onclick=()=>{
+    if (objects.length===0) return;
+    if (confirm('Clear the entire canvas?')) { objects=[];selectedId=null;pushHistory();render(); }
+  };
+
+  document.getElementById('exportBtn').onclick=()=>{
+    const prev=selectedId; selectedId=null; render();
+    const link=document.createElement('a');
+    link.download='drawing.png';
+    link.href=canvas.toDataURL('image/png');
+    link.click();
+    selectedId=prev; render();
+  };
+
+  // Allow changing style of selected object without requiring redraw.
+  [strokeColor, fillColor, lineWidthInput, fontSizeInput].forEach(el => el.addEventListener('change',()=>{
+    const o=objects.find(o=>o.id===selectedId); if(!o) return;
+    if (el===strokeColor) o.stroke=strokeColor.value;
+    if (el===fillColor && ['rect','roundrect','ellipse','diamond'].includes(o.type)) o.fill=fillColor.value;
+    if (el===lineWidthInput && o.type!=='text') o.lineWidth=Math.max(1,Number(lineWidthInput.value)||2);
+    if (el===fontSizeInput && o.type==='text') o.fontSize=Math.max(10,Number(fontSizeInput.value)||22);
+    pushHistory(); render();
+  }));
+
+  pushHistory();
+  render();
+})();
+</script>
+</body>
+</html>
